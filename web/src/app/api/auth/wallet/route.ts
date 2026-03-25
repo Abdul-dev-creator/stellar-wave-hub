@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     }
 
     const challengeData = challengeDoc.data()!;
-    if (Date.now() > challengeData.expires_at) {
+    if (Date.now() > (challengeData.expires_at as number)) {
       await challengesCol().doc(publicKey).delete();
       return Response.json({ error: "Challenge expired. Request a new one." }, { status: 400 });
     }

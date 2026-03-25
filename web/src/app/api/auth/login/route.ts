@@ -17,12 +17,12 @@ export async function POST(request: Request) {
     const userDoc = snap.docs[0];
     const user = userDoc.data();
 
-    const valid = await comparePassword(password, user.password_hash);
+    const valid = await comparePassword(password, user.password_hash as string);
     if (!valid) {
       return Response.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
-    const token = signToken({ userId: user.numericId, role: user.role });
+    const token = signToken({ userId: user.numericId as number, role: user.role as string });
     return Response.json({
       token,
       user: {
