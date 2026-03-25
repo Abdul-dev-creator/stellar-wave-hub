@@ -1,61 +1,42 @@
-import db from "@/lib/db";
-import {getAuthUser} from "@/lib/auth";
+import { projectsCol } from "@/lib/db";
+import { getAuthUser } from "@/lib/auth";
+export const dynamic = "force-dynamic";
 
 export async function PUT(
-	request: Request,
-	{params}: {params: Promise<{id: string}>},
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
 ) {
-	const auth = getAuthUser(request);
-	if (!auth) return Response.json({error: "Unauthorized"}, {status: 401});
+  const auth = getAuthUser(request);
+  if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-	const {id} = await params;
-	const project = db
-		.prepare("SELECT * FROM projects WHERE id = ?")
-		.get(Number(id)) as Record<string, unknown> | undefined;
-	if (!project)
-		return Response.json({error: "Project not found"}, {status: 404});
-	if (project.user_id !== auth.userId && auth.role !== "admin") {
-		return Response.json({error: "Forbidden"}, {status: 403});
-	}
+  const { id } = await params;
+  const ref = projectsCol.ref.doc(id);
+  const doc = await ref.get();
+  if (!doc.exists) return Response.json({ error: "Project not found" }, { status: 404 });
 
-	try {
-		const body = await request.json();
-		const allowed = [
-			"name",
-			"description",
-			"category",
-			"stellar_account_id",
-			"stellar_contract_id",
-			"tags",
-			"website_url",
-			"github_url",
-			"logo_url",
-		];
-		const fields: string[] = [];
-		const values: unknown[] = [];
+  const project = doc.data()!;
+  if (project.user_id !== auth.userId && auth.role !== "admin") {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
 
-		for (const key of allowed) {
-			if (body[key] !== undefined) {
-				fields.push(`${key} = ?`);
-				values.push(body[key]);
-			}
-		}
+  try {
+    const body = await request.json();
+    const allowed = ["name", "description", "category", "stellar_account_id", "stellar_contract_id", "tags", "website_url", "github_url", "logo_url"];
+    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
-		if (fields.length === 0)
-			return Response.json({error: "No fields to update"}, {status: 400});
+    for (const key of allowed) {
+      if (body[key] !== undefined) updates[key] = body[key];
+    }
 
-		fields.push("updated_at = CURRENT_TIMESTAMP");
-		values.push(Number(id));
-		db.prepare(`UPDATE projects SET ${fields.join(", ")} WHERE id = ?`).run(
-			...values,
-		);
+    if (Object.keys(updates).length <= 1) {
+      return Response.json({ error: "No fields to update" }, { status: 400 });
+    }
 
-		const updated = db
-			.prepare("SELECT * FROM projects WHERE id = ?")
-			.get(Number(id));
-		return Response.json({project: updated});
-	} catch (err) {
-		console.error("Edit project error:", err);
-		return Response.json({error: "Internal server error"}, {status: 500});
-	}
+    await ref.update(updates);
+    const updated = await ref.get();
+    return Response.json({ project: { ...updated.data(), id: updated.data()!.numericId } });
+  } catch (err) {
+    console.error("Edit project error:", err);
+    return Response.json({ error: "Internal server error" }, { status: 500 });
+  }
 }

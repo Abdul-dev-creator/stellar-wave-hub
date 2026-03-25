@@ -1,24 +1,27 @@
-import db from "@/lib/db";
-import {getAuthUser} from "@/lib/auth";
+import { projectsCol, ratingsCol } from "@/lib/db";
+import { getAuthUser } from "@/lib/auth";
+export const dynamic = "force-dynamic";
 
 export async function DELETE(
-	request: Request,
-	{params}: {params: Promise<{id: string}>},
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
 ) {
-	const auth = getAuthUser(request);
-	if (!auth || auth.role !== "admin") {
-		return Response.json({error: "Forbidden"}, {status: 403});
-	}
+  const auth = getAuthUser(request);
+  if (!auth || auth.role !== "admin") {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
 
-	const {id} = await params;
-	const project = db
-		.prepare("SELECT * FROM projects WHERE id = ?")
-		.get(Number(id));
-	if (!project)
-		return Response.json({error: "Project not found"}, {status: 404});
+  const { id } = await params;
+  const ref = projectsCol.ref.doc(id);
+  const doc = await ref.get();
+  if (!doc.exists) return Response.json({ error: "Project not found" }, { status: 404 });
 
-	db.prepare("DELETE FROM ratings WHERE project_id = ?").run(Number(id));
-	db.prepare("DELETE FROM projects WHERE id = ?").run(Number(id));
+  // Delete associated ratings
+  const rSnap = await ratingsCol.ref.where("project_id", "==", Number(id)).get();
+  const batch = projectsCol.ref.firestore.batch();
+  rSnap.docs.forEach((d) => batch.delete(d.ref));
+  batch.delete(ref);
+  await batch.commit();
 
-	return Response.json({message: "Project deleted"});
+  return Response.json({ message: "Project deleted" });
 }

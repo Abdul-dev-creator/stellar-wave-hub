@@ -1,62 +1,64 @@
-import db from "@/lib/db";
-import {getAuthUser} from "@/lib/auth";
+import { usersCol } from "@/lib/db";
+import { getAuthUser } from "@/lib/auth";
+export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-	const auth = getAuthUser(request);
-	if (!auth) return Response.json({error: "Unauthorized"}, {status: 401});
+  const auth = getAuthUser(request);
+  if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-	const user = db
-		.prepare(
-			"SELECT id, username, email, role, stellar_address, github_url, bio, created_at FROM users WHERE id = ?",
-		)
-		.get(auth.userId);
-	if (!user) return Response.json({error: "User not found"}, {status: 404});
-	return Response.json({user});
+  const doc = await usersCol.ref.doc(String(auth.userId)).get();
+  if (!doc.exists) return Response.json({ error: "User not found" }, { status: 404 });
+
+  const u = doc.data()!;
+  return Response.json({
+    user: {
+      id: u.numericId,
+      username: u.username,
+      email: u.email,
+      role: u.role,
+      stellar_address: u.stellar_address,
+      github_url: u.github_url,
+      bio: u.bio,
+      created_at: u.created_at,
+    },
+  });
 }
 
 export async function PUT(request: Request) {
-	const auth = getAuthUser(request);
-	if (!auth) return Response.json({error: "Unauthorized"}, {status: 401});
+  const auth = getAuthUser(request);
+  if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-	try {
-		const {username, bio, stellar_address, github_url} =
-			await request.json();
-		const fields: string[] = [];
-		const values: unknown[] = [];
+  try {
+    const { username, bio, stellar_address, github_url } = await request.json();
+    const updates: Record<string, unknown> = {};
 
-		if (username !== undefined) {
-			fields.push("username = ?");
-			values.push(username);
-		}
-		if (bio !== undefined) {
-			fields.push("bio = ?");
-			values.push(bio);
-		}
-		if (stellar_address !== undefined) {
-			fields.push("stellar_address = ?");
-			values.push(stellar_address);
-		}
-		if (github_url !== undefined) {
-			fields.push("github_url = ?");
-			values.push(github_url);
-		}
+    if (username !== undefined) updates.username = username;
+    if (bio !== undefined) updates.bio = bio;
+    if (stellar_address !== undefined) updates.stellar_address = stellar_address;
+    if (github_url !== undefined) updates.github_url = github_url;
 
-		if (fields.length === 0)
-			return Response.json({error: "No fields to update"}, {status: 400});
+    if (Object.keys(updates).length === 0) {
+      return Response.json({ error: "No fields to update" }, { status: 400 });
+    }
 
-		values.push(auth.userId);
-		db.prepare(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`).run(
-			...values,
-		);
+    const ref = usersCol.ref.doc(String(auth.userId));
+    await ref.update(updates);
 
-		const user = db
-			.prepare(
-				"SELECT id, username, email, role, stellar_address, github_url, bio FROM users WHERE id = ?",
-			)
-			.get(auth.userId);
-		return Response.json({user});
-	} catch (err) {
-		console.error("Update profile error:", err);
-		return Response.json({error: "Internal server error"}, {status: 500});
-	}
+    const updated = await ref.get();
+    const u = updated.data()!;
+    return Response.json({
+      user: {
+        id: u.numericId,
+        username: u.username,
+        email: u.email,
+        role: u.role,
+        stellar_address: u.stellar_address,
+        github_url: u.github_url,
+        bio: u.bio,
+      },
+    });
+  } catch (err) {
+    console.error("Update profile error:", err);
+    return Response.json({ error: "Internal server error" }, { status: 500 });
+  }
 }

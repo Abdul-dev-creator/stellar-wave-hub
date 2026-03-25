@@ -1,23 +1,29 @@
-import db from "@/lib/db";
-import {getAuthUser} from "@/lib/auth";
+import { projectsCol, usersCol } from "@/lib/db";
+import { getAuthUser } from "@/lib/auth";
+export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-	const auth = getAuthUser(request);
-	if (!auth || auth.role !== "admin") {
-		return Response.json({error: "Forbidden"}, {status: 403});
-	}
+  const auth = getAuthUser(request);
+  if (!auth || auth.role !== "admin") {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
 
-	const projects = db
-		.prepare(
-			`
-    SELECT p.*, u.username
-    FROM projects p
-    LEFT JOIN users u ON p.user_id = u.id
-    WHERE p.status = 'submitted'
-    ORDER BY p.created_at DESC
-  `,
-		)
-		.all();
+  const snap = await projectsCol.ref
+    .where("status", "==", "submitted")
+    .orderBy("created_at", "desc")
+    .get();
 
-	return Response.json({projects});
+  const projects = await Promise.all(
+    snap.docs.map(async (d) => {
+      const p = d.data();
+      let username = null;
+      if (p.user_id) {
+        const uDoc = await usersCol.ref.doc(String(p.user_id)).get();
+        username = uDoc.exists ? uDoc.data()!.username : null;
+      }
+      return { ...p, id: p.numericId, username };
+    })
+  );
+
+  return Response.json({ projects });
 }

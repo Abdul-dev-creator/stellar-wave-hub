@@ -1,64 +1,55 @@
-import db from "@/lib/db";
-import {getAuthUser} from "@/lib/auth";
+import { projectsCol, ratingsCol, nextId } from "@/lib/db";
+import { getAuthUser } from "@/lib/auth";
+export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-	const auth = getAuthUser(request);
-	if (!auth) return Response.json({error: "Unauthorized"}, {status: 401});
+  const auth = getAuthUser(request);
+  if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-	try {
-		const {
-			project_id,
-			score,
-			purpose_score,
-			innovation_score,
-			usability_score,
-			review_text,
-		} = await request.json();
+  try {
+    const { project_id, score, purpose_score, innovation_score, usability_score, review_text } =
+      await request.json();
 
-		if (!project_id || !score || score < 1 || score > 5) {
-			return Response.json(
-				{error: "project_id and score (1-5) are required"},
-				{status: 400},
-			);
-		}
+    if (!project_id || !score || score < 1 || score > 5) {
+      return Response.json({ error: "project_id and score (1-5) are required" }, { status: 400 });
+    }
 
-		const project = db
-			.prepare("SELECT id, user_id FROM projects WHERE id = ?")
-			.get(project_id) as Record<string, unknown> | undefined;
-		if (!project)
-			return Response.json({error: "Project not found"}, {status: 404});
-		if (project.user_id === auth.userId) {
-			return Response.json(
-				{error: "Cannot rate your own project"},
-				{status: 400},
-			);
-		}
+    const pDoc = await projectsCol.ref.doc(String(project_id)).get();
+    if (!pDoc.exists) return Response.json({ error: "Project not found" }, { status: 404 });
+    if (pDoc.data()!.user_id === auth.userId) {
+      return Response.json({ error: "Cannot rate your own project" }, { status: 400 });
+    }
 
-		db.prepare(
-			`
-      INSERT INTO ratings (project_id, user_id, score, purpose_score, innovation_score, usability_score, review_text)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(project_id, user_id) DO UPDATE SET
-        score = excluded.score,
-        purpose_score = excluded.purpose_score,
-        innovation_score = excluded.innovation_score,
-        usability_score = excluded.usability_score,
-        review_text = excluded.review_text,
-        created_at = CURRENT_TIMESTAMP
-    `,
-		).run(
-			project_id,
-			auth.userId,
-			score,
-			purpose_score || null,
-			innovation_score || null,
-			usability_score || null,
-			review_text || null,
-		);
+    // Check for existing rating (upsert)
+    const existing = await ratingsCol.ref
+      .where("project_id", "==", project_id)
+      .where("user_id", "==", auth.userId)
+      .limit(1)
+      .get();
 
-		return Response.json({message: "Rating saved"}, {status: 201});
-	} catch (err) {
-		console.error("Rating error:", err);
-		return Response.json({error: "Internal server error"}, {status: 500});
-	}
+    const ratingData = {
+      project_id,
+      user_id: auth.userId,
+      score,
+      purpose_score: purpose_score || null,
+      innovation_score: innovation_score || null,
+      usability_score: usability_score || null,
+      review_text: review_text || null,
+      created_at: new Date().toISOString(),
+    };
+
+    if (!existing.empty) {
+      // Update existing rating
+      await existing.docs[0].ref.update(ratingData);
+    } else {
+      // Create new rating
+      const numericId = await nextId("ratings");
+      await ratingsCol.ref.doc(String(numericId)).set({ numericId, ...ratingData });
+    }
+
+    return Response.json({ message: "Rating saved" }, { status: 201 });
+  } catch (err) {
+    console.error("Rating error:", err);
+    return Response.json({ error: "Internal server error" }, { status: 500 });
+  }
 }

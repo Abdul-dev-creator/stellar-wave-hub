@@ -1,22 +1,28 @@
-import db from "@/lib/db";
+import { ratingsCol, usersCol } from "@/lib/db";
+export const dynamic = "force-dynamic";
 
 export async function GET(
-	_request: Request,
-	{params}: {params: Promise<{projectId: string}>},
+  _request: Request,
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
-	const {projectId} = await params;
+  const { projectId } = await params;
 
-	const ratings = db
-		.prepare(
-			`
-    SELECT r.*, u.username
-    FROM ratings r
-    LEFT JOIN users u ON r.user_id = u.id
-    WHERE r.project_id = ?
-    ORDER BY r.created_at DESC
-  `,
-		)
-		.all(Number(projectId));
+  const snap = await ratingsCol.ref
+    .where("project_id", "==", Number(projectId))
+    .orderBy("created_at", "desc")
+    .get();
 
-	return Response.json({ratings});
+  const ratings = await Promise.all(
+    snap.docs.map(async (d) => {
+      const r = d.data();
+      let username = "unknown";
+      if (r.user_id) {
+        const u = await usersCol.ref.doc(String(r.user_id)).get();
+        if (u.exists) username = u.data()!.username;
+      }
+      return { ...r, id: r.numericId ?? d.id, username };
+    })
+  );
+
+  return Response.json({ ratings });
 }

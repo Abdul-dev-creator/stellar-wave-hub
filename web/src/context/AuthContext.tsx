@@ -12,7 +12,7 @@ import {
 interface User {
   id: number;
   username: string;
-  email: string;
+  email: string | null;
   role: string;
   stellar_address?: string;
   github_url?: string;
@@ -24,11 +24,8 @@ interface AuthContextType {
   token: string | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (
-    username: string,
-    email: string,
-    password: string
-  ) => Promise<void>;
+  register: (username: string, email: string, password: string) => Promise<void>;
+  connectWallet: () => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
 }
@@ -82,11 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(data.user);
   };
 
-  const register = async (
-    username: string,
-    email: string,
-    password: string
-  ) => {
+  const register = async (username: string, email: string, password: string) => {
     const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -99,6 +92,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(data.user);
   };
 
+  const connectWallet = async () => {
+    // Check for Freighter wallet extension
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const freighter = (window as any).freighter as
+      | { isConnected: () => Promise<boolean>; getPublicKey: () => Promise<string>; signMessage: (msg: string) => Promise<{ signature: string }> }
+      | undefined;
+
+    if (!freighter) {
+      throw new Error(
+        "Freighter wallet not found. Please install the Freighter browser extension."
+      );
+    }
+
+    const connected = await freighter.isConnected();
+    if (!connected) {
+      throw new Error("Please connect your Freighter wallet first.");
+    }
+
+    // Get public key
+    const publicKey = await freighter.getPublicKey();
+    if (!publicKey) {
+      throw new Error("Could not retrieve public key from wallet.");
+    }
+
+    // Request challenge from server
+    const challengeRes = await fetch(`/api/auth/challenge?publicKey=${publicKey}`);
+    const challengeData = await challengeRes.json();
+    if (!challengeRes.ok) throw new Error(challengeData.error || "Failed to get challenge");
+
+    // Sign the challenge with wallet
+    const { signature } = await freighter.signMessage(challengeData.challenge);
+
+    // Verify signature with server
+    const authRes = await fetch("/api/auth/wallet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ publicKey, signature }),
+    });
+    const authData = await authRes.json();
+    if (!authRes.ok) throw new Error(authData.error || "Wallet authentication failed");
+
+    localStorage.setItem("swh_token", authData.token);
+    setToken(authData.token);
+    setUser(authData.user);
+  };
+
   const logout = () => {
     localStorage.removeItem("swh_token");
     setToken(null);
@@ -107,7 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, token, loading, login, register, logout, refreshUser }}
+      value={{ user, token, loading, login, register, connectWallet, logout, refreshUser }}
     >
       {children}
     </AuthContext.Provider>
