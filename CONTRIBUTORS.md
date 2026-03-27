@@ -84,7 +84,18 @@ Replace `YOUR_GITHUB_USERNAME`, `Your Name`, `YOUR_X_HANDLE`, and the role/contr
 
   <!-- Add your <td> above this line -->
 </tr>
-
+<td align="center">
+  <a href="https://github.com/Abdul-dev-creator">
+    <img src="https://github.com/Abdul-dev-creator.png" width="80" alt="Abdul" style="border-radius:50%" />
+    <br />
+    <sub><b>Abdul</b></sub>
+  </a>
+  <br />
+  <a href="https://github.com/Abdul-dev-creator"><img src="https://img.shields.io/badge/-GitHub-181717?logo=github&logoColor=white&style=flat-square" alt="GitHub" /></a>
+  <a href="https://x.com/Biggestreez"><img src="https://img.shields.io/badge/-X-000000?logo=x&logoColor=white&style=flat-square" alt="X" /></a>
+  <br />
+  <sub> Researcher — Researched and submitted Stellar Disbursement Platform wave project profile</sub>
+</td>
       <sub>Maintainer — Project creator</sub>
     </td>
     <td align="center">
